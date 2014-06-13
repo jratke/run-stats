@@ -24,12 +24,12 @@ def get_duration(string):
     return timedelta(hours=int(hours), minutes=int(minutes), seconds=int(seconds))
 
 def scan(selector):
-    result = dict(dist_sum=0.0, dist_long=0.0, count=0, out_count=0,
+    result = dict(dist_sum=0.0, dist_long=0.0, 
+                  count=0, out_count=0,
+                  fastest=timedelta().max, slowest=timedelta(),
                   time_sum=timedelta(), time_long=timedelta(),
                   climbed=0.0, cal=0.0, cal_max=0.0)
     pace_sum = timedelta()
-    result['fastest'] = timedelta().max
-    result['slowest'] = timedelta()
     pace_sum_count = 0
 
     csv_file = DictReader(open(args.file,'rb'),delimiter=',')
@@ -39,12 +39,12 @@ def scan(selector):
 
         # TODO: probably don't need to make a datetime here just to parse MM:SS
         if row[AVG_PACE]:
-            pace = datetime.strptime(row[AVG_PACE], "%M:%S")
-            pace_td = timedelta(minutes=pace.minute, seconds=pace.second)
+            pace_dt = datetime.strptime(row[AVG_PACE], "%M:%S")
+            pace = timedelta(minutes=pace_dt.minute, seconds=pace_dt.second)
         else:
-            pace_td = timedelta()
+            pace = timedelta()
 
-        if selector(row, activity_time, duration, pace_td):
+        if selector(row, activity_time, duration, pace):
             dist = float(row['Distance (mi)'])
             result['dist_sum'] += dist
             result['dist_long'] = max(dist, result['dist_long'])
@@ -57,12 +57,9 @@ def scan(selector):
             result['cal_max'] = max(float(row['Calories Burned']), result['cal_max'])
             if row['GPX File'] != '':
                 result['out_count'] += 1
-            if pace_td < result['fastest']:
-                result['fastest'] = pace_td
-            if pace_td > result['slowest']:
-                result['slowest'] = pace_td
-
-            pace_sum += pace_td
+            result['fastest'] = min(pace, result['fastest'])
+            result['slowest'] = max(pace, result['slowest'])
+            pace_sum += pace
             pace_sum_count += 1
 
     if pace_sum_count > 0:
@@ -89,9 +86,10 @@ def show_summary(time_selector):
     #print '{0:4d}  {1:>17} {2:>17} {3:>17} {4:>17} {5:>17}'.format(year,'Run','Walk','Cycle','Other','All')
     print 'Dist: {0:17.2f} {1:17.2f} {2:17.2f} {3:17.2f} {4:17.2f}'.format(rres['dist_sum'], wres['dist_sum'], cres['dist_sum'], ores['dist_sum'], ares['dist_sum'])
     print 'Long: {0:17.2f} {1:17.2f} {2:17.2f} {3:17.2f} {4:17.2f}'.format(rres['dist_long'], wres['dist_long'], cres['dist_long'], ores['dist_long'], ares['dist_long'])
-    print 'Pace: ',rres['avg_pace']
-    print 'Fast: ',rres['fastest']
-    print 'Slow: ',rres['slowest']
+    print 'Pace: {0:>17s} {1:>17s} {2:>17s}'.format(rres['avg_pace'], wres['avg_pace'], cres['avg_pace'])
+    # TODO: If fastest is max, just leave it blank
+    print 'Fast: {0:>17s} {1:>17s} {2:>17s}'.format(rres['fastest'], wres['fastest'], cres['fastest'])
+    print 'Slow: {0:>17s} {1:>17s} {2:>17s}'.format(rres['slowest'], wres['slowest'], cres['slowest'])
     print 'Count:{0:17d} {1:17d} {2:17d} {3:17d} {4:17d}'.format(rres['count'], wres['count'], cres['count'], ores['count'], ares['count'])
     print 'Outdoor:{0:15d} {1:17d} {2:17d} {3:17d} {4:17d}'.format(rres['out_count'], wres['out_count'], cres['out_count'], ores['out_count'], ares['out_count'])
     print 'Time: {0:>17s} {1:>17s} {2:>17s} {3:>17s} {4:>17s}'.format(rres['time_sum'], wres['time_sum'], cres['time_sum'], ores['time_sum'], ares['time_sum'])
@@ -102,24 +100,24 @@ def show_summary(time_selector):
     print ""
 
 parser = argparse.ArgumentParser(description='Parses and displays stats from RunKeeper exported data.')
-parser.add_argument("-r","--run",   help="show running stats (the default action)",
+parser.add_argument("-r","--run", help="show running stats (the default action)",
                     action="store_true", dest="showrun",   default=True)
-parser.add_argument("-w","--walk",  help="show walking stats",
+parser.add_argument("-w","--walk", help="show walking stats",
                     action="store_true", dest="showwalk",  default=False)
 parser.add_argument("-c","--cycle", help="show cycling stats",
                     action="store_true", dest="showcycle", default=False)
 parser.add_argument("-o","--other", help="show all other stats",
                     action="store_true", dest="showother", default=False)
-parser.add_argument("-a","--all",   help="show combined total stats",
+parser.add_argument("-a","--all", help="show combined total stats",
                     action="store_true", dest="showall",   default=False)
-parser.add_argument("-f","--file",  help="specify Runkeeper .csv data file",
+parser.add_argument("-f","--file", help="specify Runkeeper .csv data file",
                     default="cardioActivities.csv")
 # TODO: add years option or other way to select time frame
 
 args = parser.parse_args()
 
 # assume first row has the field names, which it should.  This row then is not in the csv_file data.
-csv_file = DictReader(open(args.file,'rb'),delimiter=',')
+csv_file = DictReader(open(args.file, 'rb'), delimiter=',')
 prev = []
 oldest_year = date.today().year
 for row in csv_file:
@@ -129,7 +127,7 @@ for row in csv_file:
         print "Duplicate row: ", row
     prev = row
 
-for year in range(oldest_year,date.today().year + 1):
+for year in range(oldest_year, date.today().year + 1):
     print '{0:4d}  {1:>17} {2:>17} {3:>17} {4:>17} {5:>17}'.format(year,'Run','Walk','Cycle','Other','All')
     show_summary(lambda t: t.year == year)
 
